@@ -1,0 +1,8 @@
+{
+  "block.horizon_factory.coal_patch": "Coal Patch",
+  "block.horizon_factory.iron_patch": "Iron Patch",
+  "block.horizon_factory.copper_patch": "Copper Patch",
+  "block.horizon_factory.drill": "Drill",
+  "block.horizon_factory.drill_part": "Drill Part",
+  "item.horizon_factory.scanner": "Resource Scanner"
+}

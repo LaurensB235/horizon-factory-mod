@@ -1,0 +1,9 @@
+{
+  "values": [
+    "horizon_factory:coal_patch",
+    "horizon_factory:iron_patch",
+    "horizon_factory:copper_patch",
+    "horizon_factory:drill",
+    "horizon_factory:drill_part"
+  ]
+}

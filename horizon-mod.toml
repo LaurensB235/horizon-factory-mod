@@ -1,0 +1,10 @@
+id = "horizon_factory"
+name = "Factory"
+version = "0.1.0"
+description = "Factorio-style resource fields and coal-fueled drills."
+authors = ["LaurensB235"]
+# A content mod: blocks, items and mob effects from data/ and assets/, no code (API 0.2).
+api = "0.2"
+side = "both"
+# registries: "May add blocks, items, mob effects and entity types to your worlds".
+capabilities = ["registries"]

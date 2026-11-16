@@ -1,0 +1,20 @@
+# The Factory native trait mod (docs/native-mods.md, "Trait mods"). Build it with
+# `horizon-launcher native-build <this folder> --instance <instance> --trust-native-code`.
+# The flag records the owner's consent that this code runs with full access: the owner (or an agent they gave standing
+# permission for the separate test instance) passes it; the code is scanned for file, network, process and unsafe use first.
+[mod]
+id = "factory"
+version = "0.1.0"
+
+# The Horizon commit it is written and type-checked against: Nightly 2026-11-13.
+[compatibility]
+horizon_revision = "9f42064c11efe7ef3e5ed2baad7ddc2a3b36eea0"
+
+# The hook glue: a trait mod package whose hooks() the launcher links into the game.
+[api]
+path = "api"
+
+# The game-independent logic, built once with the game and used by the glue by path.
+[[crate]]
+id = "core"
+path = "core"

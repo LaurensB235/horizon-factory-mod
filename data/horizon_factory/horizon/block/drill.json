@@ -1,0 +1,25 @@
+{
+  "template": "minecraft:dropper",
+  "properties": {
+    "hardness": 3.5,
+    "occludes": false
+  },
+  "state_properties": {
+    "lit": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "lit": "false",
+    "facing": "north",
+    "triggered": "false"
+  },
+  "state_light": {
+    "property": "lit",
+    "values": {
+      "false": 0,
+      "true": 15
+    }
+  },
+  "item": true
+}

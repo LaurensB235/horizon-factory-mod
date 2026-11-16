@@ -1,0 +1,28 @@
+{
+  "variants": {
+    "richness=level_1": {
+      "model": "horizon_factory:block/iron_patch_1"
+    },
+    "richness=level_2": {
+      "model": "horizon_factory:block/iron_patch_2"
+    },
+    "richness=level_3": {
+      "model": "horizon_factory:block/iron_patch_3"
+    },
+    "richness=level_4": {
+      "model": "horizon_factory:block/iron_patch_4"
+    },
+    "richness=level_5": {
+      "model": "horizon_factory:block/iron_patch_5"
+    },
+    "richness=level_6": {
+      "model": "horizon_factory:block/iron_patch_6"
+    },
+    "richness=level_7": {
+      "model": "horizon_factory:block/iron_patch_7"
+    },
+    "richness=level_8": {
+      "model": "horizon_factory:block/iron_patch_8"
+    }
+  }
+}

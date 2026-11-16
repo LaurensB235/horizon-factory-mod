@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The Horizon commit cargo-horizon-mod is built from. Bump it on purpose.
+  HORIZON_REV: 091434d9969bc990dd03f970cd0e7adb2bbdb542
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # cargo-horizon-mod compiles from source (about 2.5 minutes), so keep the binary.
+      - name: Cache cargo-horizon-mod
+        id: cache-tool
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-horizon-mod
+          key: cargo-horizon-mod-${{ runner.os }}-${{ env.HORIZON_REV }}
+
+      - name: Install cargo-horizon-mod
+        if: steps.cache-tool.outputs.cache-hit != 'true'
+        run: cargo install --locked --git https://github.com/horizon-rust/horizon --rev "$HORIZON_REV" cargo-horizon-mod
+
+      # The project's test command (see README.md).
+      - name: Build the mod
+        run: cargo horizon-mod build
+
+      - name: Check the mod
+        run: cargo horizon-mod check target/horizon-mod/horizon_factory.hmod
+
+      # The game-independent logic of the native mod: plain Rust, no game needed.
+      - name: Test the native logic crate
+        working-directory: native/core
+        run: cargo test

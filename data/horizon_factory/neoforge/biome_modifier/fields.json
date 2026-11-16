@@ -1,0 +1,10 @@
+{
+  "type": "neoforge:add_features",
+  "biomes": "#minecraft:is_overworld",
+  "features": [
+    "horizon_factory:coal_field",
+    "horizon_factory:iron_field",
+    "horizon_factory:copper_field"
+  ],
+  "step": "underground_ores"
+}

@@ -1,0 +1,6 @@
+# Keep the working tree byte-identical on every machine: the packed .hmod is compared by hash between a client and a
+# server, so Windows line-ending conversion (core.autocrlf) must not change what gets packed.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.hmod binary

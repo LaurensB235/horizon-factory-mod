@@ -1,0 +1,9 @@
+[package]
+name = "factory-core"
+version = "0.1.0"
+edition = "2021"
+description = "Game-independent logic of the Factory mod. No Horizon types, so cargo test needs no game."
+
+# No dependencies on purpose: the launcher only allows crates that are in Horizon's Cargo.lock, and this crate
+# must not depend on horizon-client (Cargo forbids that cycle).
+[dependencies]

@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "R": "minecraft:redstone",
+    "C": "minecraft:compass"
+  },
+  "pattern": [
+    "IRI",
+    "RCR",
+    "IRI"
+  ],
+  "result": {
+    "id": "horizon_factory:scanner",
+    "count": 1
+  }
+}

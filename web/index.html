@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory Map</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1d2026; --line: #2c313a; --text: #e6e8eb; --muted: #9aa3ad;
+    --coal: #111111; --ring: #e6e6e6; --iron: #e8c8a8; --copper: #e8805a; --grid: #232830; --accent: #7aa7ff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f1f3f5; --panel: #ffffff; --line: #d5d9de; --text: #1c2025; --muted: #5d6671;
+      --coal: #111111; --ring: #ffffff; --iron: #a9784a; --copper: #c4562c; --grid: #e3e6ea; --accent: #2f5fd0; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  h1 { font-size: 16px; margin: 0 8px 0 0; }
+  label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .dot.coal { box-shadow: 0 0 0 1px var(--ring); }
+  .muted { color: var(--muted); }
+  .grow { flex: 1; }
+  button { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 10px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  main { position: relative; flex: 1; min-height: 0; }
+  canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  canvas.drag { cursor: grabbing; }
+  #tip { position: absolute; pointer-events: none; padding: 4px 8px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; font-size: 13px; display: none; white-space: nowrap; }
+  #empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    text-align: center; padding: 0 24px; color: var(--muted); pointer-events: none; }
+  .totals { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px; }
+  .totals b { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .totals .t { display: inline-flex; align-items: center; gap: 6px; }
+  footer { padding: 6px 16px; background: var(--panel); border-top: 1px solid var(--line); font-size: 12px; }
+  @media (max-width: 600px) { header { padding: 8px 12px; } footer { padding: 6px 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Factory Map</h1>
+  <label><input type="checkbox" data-r="coal" checked><span class="dot coal" style="background:var(--coal)"></span>Coal</label>
+  <label><input type="checkbox" data-r="iron" checked><span class="dot" style="background:var(--iron)"></span>Iron</label>
+  <label><input type="checkbox" data-r="copper" checked><span class="dot" style="background:var(--copper)"></span>Copper</label>
+  <label><input type="checkbox" id="terrainOn" checked>Terrain</label>
+  <span class="grow"></span>
+  <button id="home" title="Centre on spawn (0, 0)">Spawn</button>
+  <button id="fit" title="Zoom to show every field">Fit all</button>
+</header>
+<div class="totals" id="totals" aria-live="polite"></div>
+<main>
+  <canvas id="c"></canvas>
+  <div id="tip"></div>
+  <div id="empty">No fields known yet.<br>Fields appear here once a player has walked around the world for a minute.</div>
+</main>
+<footer class="muted" id="status">Loading…</footer>
+<script>
+(() => {
+  "use strict";
+  const DATA_URL = "data/fields.txt";
+  const REFRESH_MS = 5000;
+  const COLORS = { coal: "--coal", iron: "--iron", copper: "--copper" };
+  const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+  const tip = document.getElementById("tip"), status = document.getElementById("status");
+  const empty = document.getElementById("empty");
+  let fields = [], lastTick = 0, loadedAt = 0, error = "";
+  // view: world block at the canvas centre, and pixels per block
+  let view = { x: 0, z: 0, scale: 1 };
+  const on = { coal: true, iron: true, copper: true };
+
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function parse(text) {
+    const out = [];
+    for (const line of text.split("\n")) {
+      const p = line.trim().split(",");
+      if ((p.length !== 5 && p.length !== 6) || !COLORS[p[0]]) continue;
+      const [x, z, richest, seen] = p.slice(1, 5).map(Number);
+      const units = p.length === 6 ? Number(p[5]) : 0;
+      if (![x, z, richest, seen, units].every(Number.isFinite)) continue;
+      out.push({ r: p[0], x, z, richest, seen, units });
+    }
+    return out;
+  }
+
+  // ---- terrain: tiles of 64 x 64 pixels (128 x 128 blocks), one character per pixel, colours as in the mod
+  const TILE = 64, TILE_BLOCKS = 128, BLOCKS_PER_PIXEL = 2;
+  const CLASS_RGB = [0x202226, 0x5C9A3C, 0x865F3E, 0x7D7F83, 0xE0D39A, 0xC26A3A, 0x8E8A86, 0x3A6FD4, 0xF2F5F8, 0xA5D3F0, 0x2F6B2A,
+    0x6B4B2A, 0xE86A16, 0x7A2F32, 0xDDDAA8, 0x9DA4B4, 0x4C7A3A, 0x4A4A52, 0x4B3B32, 0x78B04A, 0xB48D5E];
+  const tileCache = new Map();   // "tx,tz" -> { version, canvas }
+  let tileIndex = new Map();     // "tx,tz" -> version from tiles.txt
+  const terrainOn = document.getElementById("terrainOn");
+
+  function tileCanvas(text) {
+    const cells = text.trim();
+    if (cells.length !== TILE * TILE) return null;
+    const c = document.createElement("canvas"); c.width = c.height = TILE;
+    const img = c.getContext("2d").createImageData(TILE, TILE);
+    for (let i = 0; i < cells.length; i++) {
+      const cls = parseInt(cells[i], 36);
+      const rgb = CLASS_RGB[cls] !== undefined ? CLASS_RGB[cls] : CLASS_RGB[0];
+      img.data[i * 4] = (rgb >> 16) & 255; img.data[i * 4 + 1] = (rgb >> 8) & 255; img.data[i * 4 + 2] = rgb & 255; img.data[i * 4 + 3] = cls === 0 ? 0 : 255;
+    }
+    c.getContext("2d").putImageData(img, 0, 0);
+    return c;
+  }
+
+  async function loadTiles() {
+    try {
+      const res = await fetch("data/tiles.txt", { cache: "no-store" });
+      if (!res.ok) { tileIndex = new Map(); return; }
+      const index = new Map();
+      for (const line of (await res.text()).split("\n")) {
+        const p = line.trim().split(",");
+        if (p.length === 3 && p.every(v => Number.isFinite(Number(v)))) index.set(p[0] + "," + p[1], Number(p[2]));
+      }
+      tileIndex = index;
+      await Promise.all([...index].map(async ([key, version]) => {
+        const have = tileCache.get(key);
+        if (have && have.version === version) return;
+        const [tx, tz] = key.split(",");
+        const r = await fetch("data/terrain_" + tx + "_" + tz + ".txt", { cache: "no-store" });
+        if (!r.ok) return;
+        const canvasTile = tileCanvas(await r.text());
+        if (canvasTile) tileCache.set(key, { version, canvas: canvasTile });
+      }));
+    } catch (e) { /* terrain is optional: the fields still draw */ }
+  }
+
+  function drawTerrain(r) {
+    if (!terrainOn.checked) return;
+    ctx.imageSmoothingEnabled = false;
+    for (const [key, t] of tileCache) {
+      const [tx, tz] = key.split(",").map(Number);
+      const [sx, sz] = toScreen(tx * TILE_BLOCKS, tz * TILE_BLOCKS), size = TILE_BLOCKS * view.scale;
+      if (sx > r.width || sz > r.height || sx + size < 0 || sz + size < 0) continue;
+      ctx.drawImage(t.canvas, Math.floor(sx), Math.floor(sz), Math.ceil(size) + 1, Math.ceil(size) + 1);
+    }
+  }
+
+  function updateTotals() {
+    const names = { coal: "Coal", iron: "Iron", copper: "Copper" }, box = document.getElementById("totals");
+    const sums = { coal: [0, 0], iron: [0, 0], copper: [0, 0] };
+    for (const f of fields) { sums[f.r][0] += f.units; sums[f.r][1] += 1; }
+    const counted = fields.some(f => f.units > 0);
+    box.replaceChildren(...Object.keys(sums).map(k => {
+      const t = document.createElement("span"); t.className = "t";
+      const dot = document.createElement("span"); dot.className = "dot" + (k === "coal" ? " coal" : ""); dot.style.background = css(COLORS[k]);
+      const b = document.createElement("b"); b.textContent = counted ? sums[k][0].toLocaleString() : "n/a";
+      t.append(dot, document.createTextNode(names[k] + " left: "), b, document.createTextNode(" units in " + sums[k][1] + " fields"));
+      return t;
+    }), Object.assign(document.createElement("span"), { className: "muted", textContent: "Explored land only; richer blocks hold more (16 units per richness level)." + (counted && fields.some(f => f.units === 0) ? " " + fields.filter(f => f.units === 0).length + " fields are not counted yet: they are recounted when a player is near." : "") }));
+  }
+
+  async function load() {
+    try {
+      const res = await fetch(DATA_URL, { cache: "no-store" });
+      if (res.status === 404) { fields = []; error = ""; }
+      else if (!res.ok) throw new Error("HTTP " + res.status);
+      else { fields = parse(await res.text()); error = ""; }
+      lastTick = fields.reduce((m, f) => Math.max(m, f.seen), 0);
+      loadedAt = Date.now();
+    } catch (e) { error = "Could not load the field list (" + e.message + "). Retrying."; }
+    updateStatus(); updateTotals(); draw();
+    await loadTiles(); draw();
+  }
+
+  function updateStatus() {
+    const shown = fields.filter(f => on[f.r]).length;
+    status.textContent = error ||
+      shown + " of " + fields.length + " fields shown · scroll to zoom, drag to pan · updated " +
+      new Date(loadedAt).toLocaleTimeString();
+    empty.style.display = fields.length || error ? "none" : "flex";
+  }
+
+  function resize() {
+    const r = canvas.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d);
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+    draw();
+  }
+
+  const toScreen = (x, z) => {
+    const r = canvas.getBoundingClientRect();
+    return [r.width / 2 + (x - view.x) * view.scale, r.height / 2 + (z - view.z) * view.scale];
+  };
+  const toWorld = (sx, sz) => {
+    const r = canvas.getBoundingClientRect();
+    return [view.x + (sx - r.width / 2) / view.scale, view.z + (sz - r.height / 2) / view.scale];
+  };
+
+  function draw() {
+    const r = canvas.getBoundingClientRect();
+    ctx.fillStyle = css("--bg"); ctx.fillRect(0, 0, r.width, r.height);
+    drawTerrain(r);
+    // grid: pick a spacing of 64, 128, ... blocks that stays about 80 px apart
+    let step = 16; while (step * view.scale < 70) step *= 2;
+    // over terrain the grid and its labels need their own contrast: a faint light line and white text with a dark halo
+    const overTerrain = terrainOn.checked && tileCache.size > 0;
+    ctx.lineWidth = 1; ctx.strokeStyle = overTerrain ? "rgba(255,255,255,0.18)" : css("--grid"); ctx.fillStyle = overTerrain ? "#ffffff" : css("--muted");
+    ctx.font = "11px system-ui, sans-serif"; ctx.textBaseline = "top";
+    if (overTerrain) { ctx.shadowColor = "rgba(0,0,0,0.9)"; ctx.shadowBlur = 3; }
+    const [wx0, wz0] = toWorld(0, 0), [wx1, wz1] = toWorld(r.width, r.height);
+    ctx.beginPath();
+    for (let x = Math.floor(wx0 / step) * step; x <= wx1; x += step) {
+      const [sx] = toScreen(x, 0); ctx.moveTo(Math.round(sx) + 0.5, 0); ctx.lineTo(Math.round(sx) + 0.5, r.height);
+    }
+    for (let z = Math.floor(wz0 / step) * step; z <= wz1; z += step) {
+      const [, sz] = toScreen(0, z); ctx.moveTo(0, Math.round(sz) + 0.5); ctx.lineTo(r.width, Math.round(sz) + 0.5);
+    }
+    ctx.stroke();
+    for (let x = Math.ceil(wx0 / step) * step; x <= wx1; x += step) ctx.fillText(String(x), toScreen(x, 0)[0] + 3, 3);
+    for (let z = Math.ceil(wz0 / step) * step; z <= wz1; z += step) ctx.fillText(String(z), 3, toScreen(0, z)[1] + 3);
+    ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
+    // spawn
+    const [ox, oz] = toScreen(0, 0);
+    ctx.strokeStyle = css("--accent"); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ox - 8, oz); ctx.lineTo(ox + 8, oz); ctx.moveTo(ox, oz - 8); ctx.lineTo(ox, oz + 8); ctx.stroke();
+    // fields: radius grows with zoom, brightness with richness (level 1 dim .. level 8 full)
+    const rad = Math.max(3, Math.min(9, 5 * view.scale));
+    for (const f of fields) {
+      if (!on[f.r]) continue;
+      const [sx, sz] = toScreen(f.x, f.z);
+      if (sx < -20 || sz < -20 || sx > r.width + 20 || sz > r.height + 20) continue;
+      ctx.globalAlpha = 0.35 + 0.65 * (f.richest / 8);
+      ctx.fillStyle = css(COLORS[f.r]);
+      ctx.beginPath(); ctx.arc(sx, sz, rad, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1; ctx.strokeStyle = f.r === "coal" ? css("--ring") : css("--bg"); ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function fit() {
+    const list = fields.filter(f => on[f.r]);
+    if (!list.length) { view = { x: 0, z: 0, scale: 1 }; return draw(); }
+    const xs = list.map(f => f.x), zs = list.map(f => f.z);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+    const r = canvas.getBoundingClientRect();
+    view.x = (minX + maxX) / 2; view.z = (minZ + maxZ) / 2;
+    view.scale = clampScale(0.85 * Math.min(r.width / Math.max(64, maxX - minX), r.height / Math.max(64, maxZ - minZ)));
+    draw();
+  }
+  const clampScale = s => Math.max(0.05, Math.min(16, s));
+
+  // pan, zoom and hover
+  let drag = null;
+  canvas.addEventListener("pointerdown", e => { drag = { x: e.clientX, z: e.clientY, vx: view.x, vz: view.z }; canvas.classList.add("drag"); canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointerup", () => { drag = null; canvas.classList.remove("drag"); });
+  canvas.addEventListener("pointermove", e => {
+    const rect = canvas.getBoundingClientRect(), sx = e.clientX - rect.left, sz = e.clientY - rect.top;
+    if (drag) { view.x = drag.vx - (e.clientX - drag.x) / view.scale; view.z = drag.vz - (e.clientY - drag.z) / view.scale; draw(); }
+    // nearest visible field within 16 px
+    let best = null, bd = 16 * 16;
+    for (const f of fields) {
+      if (!on[f.r]) continue;
+      const [fx, fz] = toScreen(f.x, f.z), d = (fx - sx) ** 2 + (fz - sz) ** 2;
+      if (d < bd) { bd = d; best = f; }
+    }
+    if (best && !drag) {
+      tip.style.display = "block";
+      tip.textContent = best.r[0].toUpperCase() + best.r.slice(1) + " field at " + best.x + ", " + best.z + " · richest level " + best.richest + (best.units > 0 ? " · about " + best.units.toLocaleString() + " units left" : "");
+      tip.style.left = Math.min(sx + 14, rect.width - tip.offsetWidth - 4) + "px"; tip.style.top = Math.min(sz + 14, rect.height - 30) + "px";
+    } else tip.style.display = "none";
+  });
+  canvas.addEventListener("pointerleave", () => { tip.style.display = "none"; });
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect(), sx = e.clientX - rect.left, sz = e.clientY - rect.top;
+    const before = toWorld(sx, sz); view.scale = clampScale(view.scale * Math.exp(-e.deltaY * 0.0015));
+    const after = toWorld(sx, sz); view.x += before[0] - after[0]; view.z += before[1] - after[1]; draw();
+  }, { passive: false });
+
+  terrainOn.addEventListener("change", draw);
+  document.querySelectorAll("input[data-r]").forEach(box => box.addEventListener("change", () => { on[box.dataset.r] = box.checked; updateStatus(); draw(); }));
+  document.getElementById("home").addEventListener("click", () => { view.x = 0; view.z = 0; draw(); });
+  document.getElementById("fit").addEventListener("click", fit);
+  window.addEventListener("resize", resize);
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+
+  resize(); load().then(() => { if (fields.length) fit(); });
+  setInterval(load, REFRESH_MS);
+})();
+</script>
+</body>
+</html>
